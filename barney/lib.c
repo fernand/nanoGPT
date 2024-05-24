@@ -23,7 +23,7 @@ inline float hsum(__m256 x)
  */
 void expert_forward(float *x, float *e1, float *e2, float *xo)
 {
-    float tmp[DIMH];
+    float act[DIMH];
     __m256 zero = _mm256_setzero_ps();
     for (int j = 0; j < DIMH; ++j)
     {
@@ -36,7 +36,7 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
             __m256 max_val = _mm256_max_ps(prod, zero);
             sum = _mm256_add_ps(sum, max_val);
         }
-        tmp[j] = hsum(sum);
+        act[j] = hsum(sum);
         e1 += DIM;
     }
     for (int j = 0; j < DIM; j++)
