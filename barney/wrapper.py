@@ -21,7 +21,6 @@ def ptr(A: torch.Tensor) -> ct.c_void_p:
     assert A is not None
     return ct.c_void_p(A.data.data_ptr())
 
-
 def test():
     X = torch.rand((768,))
     E1 = torch.rand((64, 768))
@@ -55,4 +54,4 @@ if __name__ == '__main__':
     lib = ct.cdll.LoadLibrary('/home/fernand/nanoGPT/barney/lib.so')
     test()
     bench()
-    bench_ff_cuda()
+    # bench_ff_cuda()
