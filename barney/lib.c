@@ -4,17 +4,21 @@
 
 #include "xoshiro.h"
 
+#define BS 16
+#define SEQ 1024
+#define NUM_EXPERTS 1024
+#define TOPK 16
 #define DIM 768
 #define DIMH 64
 
-inline float hsum128(__m128 x)
+static inline float hsum128(__m128 x)
 {
     x = _mm_add_ps(x, _mm_movehl_ps(x, x));
     x = _mm_add_ss(x, _mm_movehdup_ps(x));
     return _mm_cvtss_f32(x);
 }
 
-inline float hsum(__m256 x)
+static inline float hsum(__m256 x)
 {
     return hsum128(_mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x)));
 }
@@ -65,7 +69,7 @@ void bench_expert_forward(float *x, float *e1, float *e2, float *xo)
         expert_forward(x, e1, e2, xo);
 }
 
-float *fmalloc_rand(int numel, rnd_state *state)
+static float *fmalloc_rand(int numel, rnd_state *state)
 {
     float *output = malloc(sizeof(float) * numel);
     for (int i = 0; i < numel; i++)
@@ -73,18 +77,22 @@ float *fmalloc_rand(int numel, rnd_state *state)
     return output;
 }
 
+void route_and_compute(float *X, float *S, float *E1, float *E2, float *Xo)
+{
+}
+
 int main()
 {
     rnd_state state = {{257, 566}};
 
-    int bs = 16, seq = 1024;
-    int num_experts = 1024;
+    float *X = fmalloc_rand(BS * SEQ * DIM, &state);
+    // Softmare scores after gating and topk.
+    float *S = fmalloc_rand(BS * SEQ * TOPK, &state);
+    float *E1 = fmalloc_rand(NUM_EXPERTS * DIM * DIMH, &state);
+    float *E2 = fmalloc_rand(NUM_EXPERTS * DIMH * DIM, &state);
+    float *Xo = fmalloc_rand(BS * SEQ * DIM, &state);
 
-    float *X = fmalloc_rand(bs * seq * DIM, &state);
-    // Softmare scores after gating.
-    float *S = fmalloc_rand(bs * seq * num_experts, &state);
-    float *E1 = fmalloc_rand(num_experts * DIM * DIMH, &state);
-    float *E2 = fmalloc_rand(num_experts * DIMH * DIM, &state);
+    route_and_compute(X, S, E1, E2, Xo);
 
     return 0;
 }
