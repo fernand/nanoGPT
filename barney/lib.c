@@ -1,9 +1,3 @@
-// For VSCode to be happy.
-#ifndef __AVX__
-#define __AVX__
-#define __AVX2__
-#define __FMA__
-#endif
 #include <immintrin.h>
 
 #define DIM 768
