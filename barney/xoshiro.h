@@ -11,7 +11,7 @@ static inline uint64_t rotl(const uint64_t x, int k)
     return (x << k) | (x >> (64 - k));
 }
 
-static uint64_t next(rnd_state *state)
+uint64_t next(rnd_state *state)
 {
     const uint64_t s0 = state->s[0];
     uint64_t s1 = state->s[1];

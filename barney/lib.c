@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "thpool.h"
 #include "xoshiro.h"
 
 #define BS 16
@@ -69,6 +70,28 @@ void bench_expert_forward(float *x, float *e1, float *e2, float *xo)
         expert_forward(x, e1, e2, xo);
 }
 
+typedef struct efwd_args
+{
+    float *x;
+    float *e1;
+    float *e2;
+    float *xo;
+} efwd_args;
+
+static void expert_forward_thread(void *arg)
+{
+    efwd_args *args = (efwd_args *)args;
+    expert_forward(args->x, args->e1, args->e2, args->xo);
+}
+
+static uint32_t *malloc_rand_expert(int numel, rnd_state *state)
+{
+    uint32_t *output = malloc(sizeof(uint32_t) * numel);
+    for (int i = 0; i < numel; i++)
+        output[i] = next(state) % NUM_EXPERTS;
+    return output;
+}
+
 static float *fmalloc_rand(int numel, rnd_state *state)
 {
     float *output = malloc(sizeof(float) * numel);
@@ -77,22 +100,52 @@ static float *fmalloc_rand(int numel, rnd_state *state)
     return output;
 }
 
-void route_and_compute(float *X, float *S, float *E1, float *E2, float *Xo)
+static void route_and_compute_token(float *x, uint32_t *experts, float *E1, float *E2, float *Xo, threadpool pool)
 {
+    for (int i = 0; i < TOPK; i++)
+    {
+        int expert_idx = (int)experts[i];
+        float *e1 = &E1[expert_idx * DIM * DIMH];
+        float *e2 = &E2[expert_idx * DIMH * DIM];
+        efwd_args args = {.x=x, .e1=e1, .e2=e2, .xo=Xo};
+        thpool_add_work(pool, expert_forward_thread, &args);
+        Xo += DIM;
+    }
+}
+
+void route_and_compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo, threadpool pool)
+{
+    // Move two tokens at a time given that we have a 32 thread pool.
+    for (int token_idx = 0; token_idx < BS * SEQ; token_idx+=2)
+    {
+        route_and_compute_token(X, Ei, E1, E2, Xo, pool);
+        X += DIM;
+        Ei += TOPK;
+        Xo += DIM;
+        route_and_compute_token(X, Ei, E1, E2, Xo, pool);
+        X += DIM;
+        Ei += TOPK;
+        Xo += DIM;
+        thpool_wait(pool);
+    }
 }
 
 int main()
 {
     rnd_state state = {{257, 566}};
-
     float *X = fmalloc_rand(BS * SEQ * DIM, &state);
-    // Softmare scores after gating and topk.
-    float *S = fmalloc_rand(BS * SEQ * TOPK, &state);
+    // Chosen topk experts after gating.
+    uint32_t *Ei = malloc_rand_expert(BS * SEQ * TOPK, &state);
     float *E1 = fmalloc_rand(NUM_EXPERTS * DIM * DIMH, &state);
     float *E2 = fmalloc_rand(NUM_EXPERTS * DIMH * DIM, &state);
-    float *Xo = fmalloc_rand(BS * SEQ * DIM, &state);
+    // The reduction across TOPK will by done by torch on the CPU with the softmax scores.
+    float *Xo = fmalloc_rand(BS * SEQ * TOPK * DIM, &state);
 
-    route_and_compute(X, S, E1, E2, Xo);
+    threadpool pool = thpool_init(32);
+
+    route_and_compute(X, Ei, E1, E2, Xo, pool);
+
+    thpool_destroy(pool);
 
     return 0;
 }
