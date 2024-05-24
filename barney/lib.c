@@ -3,6 +3,8 @@
 #define DIM 768
 #define DIMH 64
 
+#define max(a,b) ((a)>(b) ? (a) : (b))
+
 inline float hsum128(__m128 x)
 {
     x = _mm_add_ps(x, _mm_movehl_ps(x, x));
@@ -32,11 +34,9 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
         {
             __m256 v1 = _mm256_loadu_ps(&x[i]);
             __m256 v2 = _mm256_loadu_ps(&e1[i]);
-            __m256 prod = _mm256_mul_ps(v1, v2);
-            __m256 max_val = _mm256_max_ps(prod, zero);
-            sum = _mm256_add_ps(sum, max_val);
+            sum = _mm256_fmadd_ps(v1, v2, sum);
         }
-        act[j] = hsum(sum);
+        act[j] = max(0, hsum(sum));
         e1 += DIM;
     }
     for (int j = 0; j < DIM; j++)

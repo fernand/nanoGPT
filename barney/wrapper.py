@@ -26,9 +26,10 @@ def test():
     E1 = torch.rand((64, 768))
     E2 = torch.rand((768, 64))
     Xo = torch.zeros((768,))
+    print((E1 @ X).shape)
     lib.expert_forward(ptr(X), ptr(E1), ptr(E2), ptr(Xo))
     Xo = Xo.numpy()
-    Xo_ref = E2.matmul(F.relu(E1.matmul(X))).numpy()
+    Xo_ref = (E2 @ F.relu(E1 @ X)).numpy()
     assert all([abs((xo - xo_ref) / xo_ref) < 1e-5 for (xo, xo_ref) in zip(Xo, Xo_ref)])
 
 def bench():
@@ -46,7 +47,7 @@ def bench_pytorch():
     E2 = torch.rand((768, 64))
     Xo = torch.zeros((768,))
     print('Pytorch speed: ', end='')
-    timeit(lambda: E2.matmul(F.relu(E1.matmul(X))))
+    timeit(lambda: E2 @ F.relu(E1 @ X))
 
 def bench_ff_cuda():
     X = torch.rand((B, T, 768)).cuda()
@@ -61,5 +62,5 @@ if __name__ == '__main__':
     lib = ct.cdll.LoadLibrary('/home/fernand/nanoGPT/barney/lib.so')
     test()
     bench()
-    bench_pytorch()
+    # bench_pytorch()
     # bench_ff_cuda()
