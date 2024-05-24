@@ -1,3 +1,4 @@
+// For VSCode to be happy.
 #ifndef __AVX__
     #define __AVX__
     #define __AVX2__
@@ -30,9 +31,9 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
     for (int j = 0; j < DIMH; ++j) {
         __m256 sum = _mm256_setzero_ps();
         for (int i = 0; i < DIM; i += 8) {
-            __m256 x_vec = _mm256_loadu_ps(&x[i]);
-            __m256 e1_vec = _mm256_loadu_ps(&e1[i]);
-            __m256 prod = _mm256_mul_ps(x_vec, e1_vec);
+            __m256 v1 = _mm256_loadu_ps(&x[i]);
+            __m256 v2 = _mm256_loadu_ps(&e1[i]);
+            __m256 prod = _mm256_mul_ps(v1, v2);
             __m256 max_val = _mm256_max_ps(prod, zero);
             sum = _mm256_add_ps(sum, max_val);
         }
