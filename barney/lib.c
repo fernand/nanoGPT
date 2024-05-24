@@ -44,6 +44,7 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
         __m256 sum = _mm256_setzero_ps();
         for (int i = 0; i < DIMH; i += 8)
         {
+            // FMA is slower than mul and add on Zen2.
             __m256 v1 = _mm256_loadu_ps(&act[i]);
             __m256 v2 = _mm256_loadu_ps(&e2[i]);
             __m256 prod = _mm256_mul_ps(v1, v2);
