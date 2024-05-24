@@ -1,4 +1,8 @@
 #include <immintrin.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "xoshiro.h"
 
 #define DIM 768
 #define DIMH 64
@@ -59,4 +63,28 @@ void bench_expert_forward(float *x, float *e1, float *e2, float *xo)
 {
     for (int k = 0; k < 1000; k++)
         expert_forward(x, e1, e2, xo);
+}
+
+float *fmalloc_rand(int numel, rnd_state *state)
+{
+    float *output = malloc(sizeof(float) * numel);
+    for (int i = 0; i < numel; i++)
+        output[i] = random_float(state);
+    return output;
+}
+
+int main()
+{
+    rnd_state state = {{257, 566}};
+
+    int bs = 16, seq = 1024;
+    int num_experts = 1024;
+
+    float *X = fmalloc_rand(bs * seq * DIM, &state);
+    // Softmare scores after gating.
+    float *S = fmalloc_rand(bs * seq * num_experts, &state);
+    float *E1 = fmalloc_rand(num_experts * DIM * DIMH, &state);
+    float *E2 = fmalloc_rand(num_experts * DIMH * DIM, &state);
+
+    return 0;
 }
