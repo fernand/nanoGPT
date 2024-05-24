@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <immintrin.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -100,32 +101,33 @@ static float *fmalloc_rand(int numel, rnd_state *state)
     return output;
 }
 
-static void route_and_compute_token(float *x, uint32_t *experts, float *E1, float *E2, float *Xo, threadpool pool)
+static void route_and_compute_token(float *x, uint32_t *experts, float *E1, float *E2, float *Xo, threadpool pool, efwd_args *argpool)
 {
     for (int i = 0; i < TOPK; i++)
     {
         int expert_idx = (int)experts[i];
-        float *e1 = &E1[expert_idx * DIM * DIMH];
-        float *e2 = &E2[expert_idx * DIMH * DIM];
-        efwd_args args = {.x=x, .e1=e1, .e2=e2, .xo=Xo};
-        thpool_add_work(pool, expert_forward_thread, &args);
+        argpool[i].x = x;
+        argpool[i].e1 = &E1[expert_idx * DIM * DIMH];
+        argpool[i].e2 = &E2[expert_idx * DIMH * DIM];
+        argpool[i].xo = Xo;
+        thpool_add_work(pool, expert_forward_thread, &argpool[i]);
         Xo += DIM;
     }
 }
 
 void route_and_compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo, threadpool pool)
 {
+    efwd_args argpool1[TOPK];
+    efwd_args argpool2[TOPK];
     // Move two tokens at a time given that we have a 32 thread pool.
     for (int token_idx = 0; token_idx < BS * SEQ; token_idx+=2)
     {
-        route_and_compute_token(X, Ei, E1, E2, Xo, pool);
+        route_and_compute_token(X, Ei, E1, E2, Xo, pool, argpool1);
         X += DIM;
         Ei += TOPK;
-        Xo += DIM;
-        route_and_compute_token(X, Ei, E1, E2, Xo, pool);
+        route_and_compute_token(X, Ei, E1, E2, Xo, pool, argpool2);
         X += DIM;
         Ei += TOPK;
-        Xo += DIM;
         thpool_wait(pool);
     }
 }
@@ -139,7 +141,7 @@ int main()
     float *E1 = fmalloc_rand(NUM_EXPERTS * DIM * DIMH, &state);
     float *E2 = fmalloc_rand(NUM_EXPERTS * DIMH * DIM, &state);
     // The reduction across TOPK will by done by torch on the CPU with the softmax scores.
-    float *Xo = fmalloc_rand(BS * SEQ * TOPK * DIM, &state);
+    float *Xo = calloc(BS * SEQ * TOPK * DIM, sizeof(float));
 
     threadpool pool = thpool_init(32);
 
