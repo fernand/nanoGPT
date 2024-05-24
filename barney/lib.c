@@ -3,14 +3,16 @@
 #define DIM 768
 #define DIMH 64
 
-inline float horizontal_add(__m256 vec)
+inline float hsum128(__m128 x)
 {
-    __m128 lo = _mm256_castps256_ps128(vec);   // Lower 128 bits
-    __m128 hi = _mm256_extractf128_ps(vec, 1); // Higher 128 bits
-    lo = _mm_add_ps(lo, hi);                   // Add lower and higher 128 bits
-    lo = _mm_hadd_ps(lo, lo);                  // Horizontal add
-    lo = _mm_hadd_ps(lo, lo);                  // Horizontal add again
-    return _mm_cvtss_f32(lo);                  // Convert the lowest element to float
+    x = _mm_add_ps(x, _mm_movehl_ps(x, x));
+    x = _mm_add_ss(x, _mm_movehdup_ps(x));
+    return _mm_cvtss_f32(x);
+}
+
+inline float hsum(__m256 x)
+{
+    return hsum128(_mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x)));
 }
 
 /*
@@ -34,7 +36,7 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
             __m256 max_val = _mm256_max_ps(prod, zero);
             sum = _mm256_add_ps(sum, max_val);
         }
-        tmp[j] = horizontal_add(sum);
+        tmp[j] = hsum(sum);
         e1 += DIM;
     }
     for (int j = 0; j < DIM; j++)
@@ -46,7 +48,7 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
             __m256 v2 = _mm256_loadu_ps(&e2[i]);
             sum = _mm256_fmadd_ps(v1, v2, sum);
         }
-        xo[j] = horizontal_add(sum);
+        xo[j] = hsum(sum);
         e2 += DIMH;
     }
 }
