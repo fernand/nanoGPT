@@ -328,7 +328,7 @@ while True:
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
-                "train/loss": losses['train'],
+                "train_raw/loss": lossf,
                 "lr": lr,
                 "mfu": running_mfu*100, # convert to percentage
             })
