@@ -37,6 +37,7 @@ def bench():
     E2 = torch.rand((768, 64))
     Xo = torch.zeros((768,))
     print('C lib speed: ', end='')
+    # Do an inner loop in the C code to avoid benchmarking ctypes overhead.
     timeit(lambda: lib.bench_expert_forward(ptr(X), ptr(E1), ptr(E2), ptr(Xo)), multiplier=1000)
 
 def bench_pytorch():
