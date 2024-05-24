@@ -2,8 +2,12 @@ import time
 import ctypes as ct
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 torch.set_num_threads(1)
+
+B = 16
+T = 1024
 
 def timeit(f):
     n = 1000
@@ -38,8 +42,17 @@ def bench():
     print('C lib speed: ', end='')
     timeit(lambda: lib.expert_forward(ptr(X), ptr(E1), ptr(E2), ptr(Xo)))
 
+def bench_ff_cuda():
+    X = torch.rand((B, T, 768)).cuda()
+    E1 = nn.Linear(768, 4 * 768).cuda()
+    E2 = nn.Linear(4 * 768, 768).cuda()
+    print('Pytorch MLP FF forward speed: ', end='')
+    def l():
+        E2(F.relu(E1(X)))
+    timeit(l)
+
 if __name__ == '__main__':
     lib = ct.cdll.LoadLibrary('/home/fernand/nanoGPT/barney/lib.so')
     test()
     bench()
-
+    bench_ff_cuda()

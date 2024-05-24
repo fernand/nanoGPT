@@ -9,7 +9,7 @@
  * e2 is a row oriented matrix of shape (DIMH, DIM)
  * xo points to pre-allocated memory of shape (DIM,)
 */
-// Currently 35 us with one core.
+// Currently 35 us with one core, 2x slower than Pytorch.
 void expert_forward(float *x, float *e1, float *e2, float *xo)
 {
     float tmp[DIMH] = {0};
