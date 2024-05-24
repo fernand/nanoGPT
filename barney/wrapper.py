@@ -9,13 +9,13 @@ torch.set_num_threads(1)
 B = 16
 T = 1024
 
-def timeit(f):
-    n = 1000
+def timeit(f, multiplier=1):
+    n = 10
     t1 = time.perf_counter_ns()
     for _ in range(n):
         f()
     t2 = time.perf_counter_ns()
-    print('exec time', (t2 - t1) / (1000 * n), 'us')
+    print('exec time', (t2 - t1) / (1000 * n * multiplier), 'us')
 
 def ptr(A: torch.Tensor) -> ct.c_void_p:
     assert A is not None
@@ -36,10 +36,16 @@ def bench():
     E1 = torch.rand((64, 768))
     E2 = torch.rand((768, 64))
     Xo = torch.zeros((768,))
+    print('C lib speed: ', end='')
+    timeit(lambda: lib.bench_expert_forward(ptr(X), ptr(E1), ptr(E2), ptr(Xo)), multiplier=1000)
+
+def bench_pytorch():
+    X = torch.rand((768,))
+    E1 = torch.rand((64, 768))
+    E2 = torch.rand((768, 64))
+    Xo = torch.zeros((768,))
     print('Pytorch speed: ', end='')
     timeit(lambda: E2.matmul(F.relu(E1.matmul(X))))
-    print('C lib speed: ', end='')
-    timeit(lambda: lib.expert_forward(ptr(X), ptr(E1), ptr(E2), ptr(Xo)))
 
 def bench_ff_cuda():
     X = torch.rand((B, T, 768)).cuda()
@@ -54,4 +60,5 @@ if __name__ == '__main__':
     lib = ct.cdll.LoadLibrary('/home/fernand/nanoGPT/barney/lib.so')
     test()
     bench()
+    bench_pytorch()
     # bench_ff_cuda()
