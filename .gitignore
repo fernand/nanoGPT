@@ -12,3 +12,4 @@ env/
 venv/
 wandb/
 *.so
+lib
