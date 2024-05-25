@@ -1,5 +1,7 @@
+#define _GNU_SOURCE
 #include <immintrin.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -12,7 +14,7 @@
 #define TOPK 16
 #define DIM 768
 #define DIMH 64
-#define NUM_THREADS 16
+#define NUM_THREADS 2
 
 static inline float hsum128(__m128 x)
 {
@@ -36,23 +38,27 @@ void expert_forward(float *x, float *e1, float *e2, float *xo)
 {
     float act[DIMH];
     __m256 zero = _mm256_setzero_ps();
+#pragma GCC unroll 16
     for (int j = 0; j < DIMH; ++j)
     {
         __m256 sum = _mm256_setzero_ps();
+#pragma GCC unroll 16
         for (int i = 0; i < DIM; i += 8)
         {
             __m256 v1 = _mm256_loadu_ps(&x[i]);
             __m256 v2 = _mm256_loadu_ps(&e1[i]);
             __m256 prod = _mm256_mul_ps(v1, v2);
-            __m256 max_val = _mm256_max_ps(prod, zero);
-            sum = _mm256_add_ps(sum, max_val);
+            __m256 relu = _mm256_max_ps(prod, zero);
+            sum = _mm256_add_ps(sum, relu);
         }
         act[j] = hsum(sum);
         e1 += DIM;
     }
+#pragma GCC unroll 16
     for (int j = 0; j < DIM; j++)
     {
         __m256 sum = _mm256_setzero_ps();
+#pragma GCC unroll 16
         for (int i = 0; i < DIMH; i += 8)
         {
             // FMA is slower than mul and add on Zen2.
@@ -94,12 +100,12 @@ static void route_and_compute_token(float *x, uint32_t *experts, float *E1, floa
     {
         int expert_idx = (int)experts[i];
         expert_forward(x, &E1[expert_idx * DIM * DIMH], &E2[expert_idx * DIMH * DIM], Xo);
-        Xo += DIM;
     }
 }
 
 typedef struct thread_args
 {
+    int thread_idx;
     int chunk_size;
     float *X;
     uint32_t *Ei;
@@ -111,11 +117,16 @@ typedef struct thread_args
 void *compute_chunk(void *arg)
 {
     thread_args *args = (thread_args *)arg;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(args->thread_idx, &cpuset);
+    sched_setaffinity(0, sizeof(cpuset), &cpuset);
     for (int i = 0; i < args->chunk_size; i++)
     {
         route_and_compute_token(args->X, args->Ei, args->E1, args->E2, args->Xo);
         args->X += DIM;
         args->Ei += TOPK;
+        args->Xo += DIM;
     }
     return NULL;
 }
@@ -128,6 +139,7 @@ void compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo)
     int token_idx = 0;
     for (int i = 0; i < NUM_THREADS; i++)
     {
+        args[i].thread_idx = i;
         args[i].chunk_size = chunk_size;
         args[i].X = X;
         args[i].Ei = Ei;
@@ -141,7 +153,7 @@ void compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo)
         }
         X += chunk_size * DIM;
         Ei += chunk_size * TOPK;
-        Xo += chunk_size * TOPK * DIM;
+        Xo += chunk_size * DIM;
         token_idx += chunk_size;
     }
     for (int i = 0; i < NUM_THREADS; i++)
@@ -162,8 +174,7 @@ int main()
     uint32_t *Ei = malloc_rand_expert(BS * SEQ * TOPK, &state);
     float *E1 = fmalloc_rand(NUM_EXPERTS * DIM * DIMH, &state);
     float *E2 = fmalloc_rand(NUM_EXPERTS * DIMH * DIM, &state);
-    // The reduction across TOPK will by done by torch on the CPU with the softmax scores.
-    float *Xo = calloc(BS * SEQ * TOPK * DIM, sizeof(float));
+    float *Xo = calloc(BS * SEQ * DIM, sizeof(float));
 
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
