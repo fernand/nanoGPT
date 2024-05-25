@@ -12,7 +12,7 @@
 #define TOPK 16
 #define DIM 768
 #define DIMH 64
-#define NUM_THREADS 32
+#define NUM_THREADS 16
 
 static inline float hsum128(__m128 x)
 {
