@@ -1,6 +1,7 @@
 #include <immintrin.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "thpool.h"
 #include "xoshiro.h"
@@ -144,7 +145,14 @@ int main()
 
     threadpool pool = thpool_init(32);
 
+    struct timespec t1, t2;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
     route_and_compute(X, Ei, E1, E2, Xo, pool);
+    clock_gettime(CLOCK_MONOTONIC, &t2);
+    long seconds = t2.tv_sec - t1.tv_sec;
+    long nanoseconds = t2.tv_nsec - t1.tv_nsec;
+    double elapsed = seconds + nanoseconds * 1e-9;
+    printf("Time: %f ms\n", elapsed * 1000);
 
     thpool_destroy(pool);
 
