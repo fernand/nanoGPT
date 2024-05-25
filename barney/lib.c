@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <immintrin.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -81,7 +80,7 @@ typedef struct efwd_args
 
 static void expert_forward_thread(void *arg)
 {
-    efwd_args *args = (efwd_args *)args;
+    efwd_args *args = (efwd_args *)arg;
     expert_forward(args->x, args->e1, args->e2, args->xo);
 }
 
