@@ -100,6 +100,7 @@ static void route_and_compute_token(float *x, uint32_t *experts, float *E1, floa
     {
         int expert_idx = (int)experts[i];
         expert_forward(x, &E1[expert_idx * DIM * DIMH], &E2[expert_idx * DIMH * DIM], Xo);
+        Xo += DIM;
     }
 }
 
@@ -126,7 +127,7 @@ void *compute_chunk(void *arg)
         route_and_compute_token(args->X, args->Ei, args->E1, args->E2, args->Xo);
         args->X += DIM;
         args->Ei += TOPK;
-        args->Xo += DIM;
+        args->Xo += TOPK * DIM;
     }
     return NULL;
 }
@@ -153,7 +154,7 @@ void compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo)
         }
         X += chunk_size * DIM;
         Ei += chunk_size * TOPK;
-        Xo += chunk_size * DIM;
+        Xo += chunk_size * TOPK * DIM;
         token_idx += chunk_size;
     }
     for (int i = 0; i < NUM_THREADS; i++)
@@ -174,7 +175,7 @@ int main()
     uint32_t *Ei = malloc_rand_expert(BS * SEQ * TOPK, &state);
     float *E1 = fmalloc_rand(NUM_EXPERTS * DIM * DIMH, &state);
     float *E2 = fmalloc_rand(NUM_EXPERTS * DIMH * DIM, &state);
-    float *Xo = calloc(BS * SEQ * DIM, sizeof(float));
+    float *Xo = calloc(BS * SEQ * TOPK * DIM, sizeof(float));
 
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
