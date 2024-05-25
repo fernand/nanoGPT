@@ -1,9 +1,9 @@
 #include <immintrin.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
 
-#include "thpool.h"
 #include "xoshiro.h"
 
 #define BS 16
@@ -12,6 +12,7 @@
 #define TOPK 16
 #define DIM 768
 #define DIMH 64
+#define NUM_THREADS 32
 
 static inline float hsum128(__m128 x)
 {
@@ -71,20 +72,6 @@ void bench_expert_forward(float *x, float *e1, float *e2, float *xo)
         expert_forward(x, e1, e2, xo);
 }
 
-typedef struct efwd_args
-{
-    float *x;
-    float *e1;
-    float *e2;
-    float *xo;
-} efwd_args;
-
-static void expert_forward_thread(void *arg)
-{
-    efwd_args *args = (efwd_args *)arg;
-    expert_forward(args->x, args->e1, args->e2, args->xo);
-}
-
 static uint32_t *malloc_rand_expert(int numel, rnd_state *state)
 {
     uint32_t *output = malloc(sizeof(uint32_t) * numel);
@@ -101,34 +88,69 @@ static float *fmalloc_rand(int numel, rnd_state *state)
     return output;
 }
 
-static void route_and_compute_token(float *x, uint32_t *experts, float *E1, float *E2, float *Xo, threadpool pool, efwd_args *argpool)
+static void route_and_compute_token(float *x, uint32_t *experts, float *E1, float *E2, float *Xo)
 {
     for (int i = 0; i < TOPK; i++)
     {
         int expert_idx = (int)experts[i];
-        argpool[i].x = x;
-        argpool[i].e1 = &E1[expert_idx * DIM * DIMH];
-        argpool[i].e2 = &E2[expert_idx * DIMH * DIM];
-        argpool[i].xo = Xo;
-        thpool_add_work(pool, expert_forward_thread, &argpool[i]);
+        expert_forward(x, &E1[expert_idx * DIM * DIMH], &E2[expert_idx * DIMH * DIM], Xo);
         Xo += DIM;
     }
 }
 
-void route_and_compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo, threadpool pool)
+typedef struct thread_args
 {
-    efwd_args argpool1[TOPK];
-    efwd_args argpool2[TOPK];
-    // Move two tokens at a time given that we have a 32 thread pool.
-    for (int token_idx = 0; token_idx < BS * SEQ; token_idx+=2)
+    int chunk_size;
+    float *X;
+    uint32_t *Ei;
+    float *E1;
+    float *E2;
+    float *Xo;
+} thread_args;
+
+void *compute_chunk(void *arg)
+{
+    thread_args *args = (thread_args *)arg;
+    for (int i = 0; i < args->chunk_size; i++)
     {
-        route_and_compute_token(X, Ei, E1, E2, Xo, pool, argpool1);
-        X += DIM;
-        Ei += TOPK;
-        route_and_compute_token(X, Ei, E1, E2, Xo, pool, argpool2);
-        X += DIM;
-        Ei += TOPK;
-        thpool_wait(pool);
+        route_and_compute_token(args->X, args->Ei, args->E1, args->E2, args->Xo);
+        args->X += DIM;
+        args->Ei += TOPK;
+    }
+    return NULL;
+}
+
+void compute(float *X, uint32_t *Ei, float *E1, float *E2, float *Xo)
+{
+    int chunk_size = BS * SEQ / NUM_THREADS;
+    pthread_t threads[NUM_THREADS];
+    thread_args args[NUM_THREADS];
+    int token_idx = 0;
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        args[i].chunk_size = chunk_size;
+        args[i].X = X;
+        args[i].Ei = Ei;
+        args[i].E1 = E1;
+        args[i].E2 = E2;
+        args[i].Xo = Xo;
+        if (pthread_create(&threads[i], NULL, compute_chunk, &args[i]) != 0)
+        {
+            perror("Failed to create thread");
+            exit(EXIT_FAILURE);
+        }
+        X += chunk_size * DIM;
+        Ei += chunk_size * TOPK;
+        Xo += chunk_size * TOPK * DIM;
+        token_idx += chunk_size;
+    }
+    for (int i = 0; i < NUM_THREADS; i++)
+    {
+        if (pthread_join(threads[i], NULL) != 0)
+        {
+            perror("Failed to join thread");
+            exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -143,18 +165,14 @@ int main()
     // The reduction across TOPK will by done by torch on the CPU with the softmax scores.
     float *Xo = calloc(BS * SEQ * TOPK * DIM, sizeof(float));
 
-    threadpool pool = thpool_init(32);
-
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    route_and_compute(X, Ei, E1, E2, Xo, pool);
+    compute(X, Ei, E1, E2, Xo);
     clock_gettime(CLOCK_MONOTONIC, &t2);
     long seconds = t2.tv_sec - t1.tv_sec;
     long nanoseconds = t2.tv_nsec - t1.tv_nsec;
     double elapsed = seconds + nanoseconds * 1e-9;
     printf("Time: %f ms\n", elapsed * 1000);
-
-    thpool_destroy(pool);
 
     return 0;
 }
